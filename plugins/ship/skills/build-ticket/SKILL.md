@@ -1,6 +1,6 @@
 ---
 name: build-ticket
-description: Pick up a ticket and ship it end to end with subagents - Sonnet builders implement it in a worktree, then three reviewers run in parallel (Opus `review`, Sonnet `ui-review`, Sonnet `testing-review`), findings route back to fresh Sonnet fixers until clean, a `unslop` pass tidies UI and copy, then one pusher agent pushes and opens a draft PR via `pr`. The main session only orchestrates. Usage /build-ticket <ticket-id-or-url> (or paste the ticket text directly).
+description: Pick up a ticket and ship it end to end with subagents - Sonnet builders implement it in a worktree, then up to three reviewers run in parallel (Opus `review`, Sonnet `ui-review`, Sonnet `testing-review`; small tickets scale this down to a single generic `review` at the orchestrator's discretion), findings route back to fresh Sonnet fixers until clean, a `unslop` pass tidies UI and copy, then one pusher agent pushes and opens a draft PR via `pr`. The main session only orchestrates. Usage /build-ticket <ticket-id-or-url> (or paste the ticket text directly).
 ---
 
 # Build Ticket
@@ -90,7 +90,7 @@ and make the single commit.
 If a builder reports it is blocked, spawn a fresh builder with the missing
 information. Do not take over.
 
-## Phase 3: review (three agents in parallel, one message)
+## Phase 3: review (up to three agents in parallel, one message)
 
 When the builder's report is in, collect the review brief: worktree path
 (from `git worktree list`, or the builder's report), branch, `git diff
@@ -99,23 +99,51 @@ read-only git commands you may run yourself — the file list with one-line
 descriptions from the builder's report, routes affected, dev server port,
 acceptance criteria.
 
-Spawn all three in a single message so they run concurrently. Each prompt =
-standing rules + review brief + "You are read-only: no edits, no commits" +
-the line below. Each must severity-rate every finding MAJOR / MINOR / NIT with
-`file:line` and a one-line fix.
+### Pick the review shape
+
+Decide from the diff stat and the builder's report which reviewers the change
+earns. The full set is the default; scale down only when you can say why in
+one line, and put that line in the final report.
+
+| shape | when | reviewers |
+|---|---|---|
+| Full | default: new behaviour, a new route or surface, schema or service changes, anything touching more than a handful of files | all three below |
+| Partial | the change is real but one axis is empty: no UI touched → drop `reviewer-ui`; no test-worthy behaviour changed (copy, config, a doc, a pure refactor with existing coverage) → drop `reviewer-tests` | the remaining one or two |
+| Light | a small, self-contained change: a one-liner, a copy fix, a config tweak, a doc-only ticket, a bug fix inside one function with an existing test | one generic `reviewer` (see below) |
+
+Rules for scaling down:
+
+- A diff touching a UI or style file always keeps `reviewer-ui` unless you go
+  Light, and Light is not allowed when a rendered surface changed in a way a
+  screenshot would catch (layout, new component, new state). A copy change
+  inside an existing component may go Light.
+- A diff that adds or changes a test file, a migration, or a service module
+  keeps `reviewer-tests`.
+- When unsure, go Full. Three cheap reviews cost less than a missed MAJOR.
+
+### Spawn
+
+Spawn the chosen reviewers in a single message so they run concurrently. Each
+prompt = standing rules + review brief + "You are read-only: no edits, no
+commits" + the line below. Each must severity-rate every finding MAJOR / MINOR /
+NIT with `file:line` and a one-line fix.
 
 | agent | model | instruction |
 |---|---|---|
 | `reviewer-code` | opus | Invoke the `review` skill on this branch and follow it. |
-| `reviewer-ui` | sonnet | Invoke the `ui-review` skill and follow it, both passes. Skip this agent entirely, and say so in the final report, only when the diff touches no UI or style file. |
+| `reviewer-ui` | sonnet | Invoke the `ui-review` skill and follow it, both passes. |
 | `reviewer-tests` | sonnet | Invoke the `testing-review` skill and follow it, including running the touched suites. |
+| `reviewer` (Light only) | opus | Invoke the `review` skill on this branch and follow it. Also confirm the builder ran the touched tests, and if a UI file changed, load the surface once with rodney and say what you saw. |
 
-Reviewers share the worktree read-only. Only `reviewer-ui` may start a rodney
-session (`--local`) and only it may start the dev server if none is running.
+Reviewers share the worktree read-only. Only `reviewer-ui` (or `reviewer` in
+the Light shape) may start a rodney session (`--local`) and only it may start
+the dev server if none is running. In the Light shape the single report is the
+one reviewer report for Phase 4, and a re-review is another `reviewer-<n>`
+scoped to the fixed findings.
 
 ## Phase 4: fix loop
 
-1. Merge the three reports. De-duplicate. Drop a finding only if you can say in
+1. Merge the reviewer reports. De-duplicate. Drop a finding only if you can say in
    one sentence why it is wrong, and list every dropped finding in the final
    report.
 2. Group the remaining MAJOR and MINOR findings into one fix task (or a few,
@@ -176,7 +204,9 @@ failure → fix table CLAUDE.md names), then a new pusher.
    comment`); skip for pasted text. Do not change the ticket's state past In
    Progress; the user moves it on review.
 2. Report to the user, in this order: PR URL; what was built in three lines;
-   review rounds and what each round fixed; findings dropped or residual, with
+   the review shape chosen (Full / Partial / Light) and, if not Full, the
+   one-line reason; review rounds and what each round fixed; findings dropped
+   or residual, with
    your one-line reason each; the local login URL per CLAUDE.md, if any, for
    the main affected route.
 
