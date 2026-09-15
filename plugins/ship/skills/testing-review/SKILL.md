@@ -1,6 +1,6 @@
 ---
 name: testing-review
-description: Review the tests on the current branch for quality and coverage - do the tests prove the changed behaviour on the real path (real database, rendered DOM, actual route), do they follow the repo's ship:testing rules, and is anything the change touched left untested. Runs the relevant suites. Read-only, reports findings; never edits or commits. Use when asked for a "testing review", "test coverage review", "check the tests", or as the testing reviewer inside ship:build-ticket.
+description: Review the tests on the current branch for quality and coverage - do the tests prove the changed behaviour on the real path (real database, rendered DOM, actual route), do they follow the repo's `testing` rules, and is anything the change touched left untested. Runs the relevant suites. Read-only, reports findings; never edits or commits. Use when asked for a "testing review", "test coverage review", "check the tests", or as the testing reviewer inside `build-ticket`.
 ---
 
 # Testing Review
@@ -13,7 +13,7 @@ default branch — `gh repo view --json defaultBranchRef -q .defaultBranchRef.na
 if unstated), a one-paragraph summary of the change, the ticket's acceptance
 criteria.
 
-Read first: the `ship:testing` skill (invoke it), and any repo-specific testing
+Read first: the `testing` skill (invoke it), and any repo-specific testing
 docs CLAUDE.md names for files the diff touches (integration-test
 conventions, E2E conventions, and so on).
 

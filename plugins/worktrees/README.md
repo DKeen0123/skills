@@ -8,12 +8,29 @@ A Claude Code plugin. Install with:
 /plugin install worktrees@dankeen
 ```
 
+This plugin is not installable through the cross-agent `skills` CLI
+(`npx skills add DKeen0123/skills`) — that tool only copies `SKILL.md`
+folders, and this plugin's value is its `just` module and shell scripts, not
+the skill doc. Use the Claude Code plugin route above, or clone the repo and
+copy `plugins/worktrees/` by hand.
+
 ## Install into a project
 
 ```bash
 mkdir -p scripts/worktrees
 cp "${CLAUDE_PLUGIN_ROOT}/worktrees.just" scripts/worktrees/
 cp "${CLAUDE_PLUGIN_ROOT}/scripts/"* scripts/worktrees/
+chmod +x scripts/worktrees/*.sh
+```
+
+If `CLAUDE_PLUGIN_ROOT` is unset (you're not running this from inside the
+Claude Code plugin), clone the repo and copy from `plugins/worktrees/`
+instead:
+
+```bash
+git clone https://github.com/DKeen0123/skills /tmp/claude-skills
+cp /tmp/claude-skills/plugins/worktrees/worktrees.just scripts/worktrees/
+cp /tmp/claude-skills/plugins/worktrees/scripts/* scripts/worktrees/
 chmod +x scripts/worktrees/*.sh
 ```
 

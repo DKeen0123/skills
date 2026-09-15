@@ -1,0 +1,16 @@
+{
+  "$schema": "https://skills.sh/schemas/skills.sh.schema.json",
+  "notGrouped": "bottom",
+  "groupings": [
+    {
+      "title": "worktrees",
+      "description": "One isolated git worktree per branch, driven by just recipes, with per-worktree setup hooks.",
+      "skills": ["worktrees"]
+    },
+    {
+      "title": "ship",
+      "description": "Ticket-to-draft-PR workflow run by subagents: build, three parallel reviews, fix loop, unslop, push, PR.",
+      "skills": ["build-ticket", "pr", "review", "ui-review", "testing-review", "testing", "unslop", "rodney-tips"]
+    }
+  ]
+}

@@ -43,7 +43,7 @@ Ten anti-patterns. Each one found is a finding.
 
 When fixing visual slop, use the project's existing component library (per
 its `CLAUDE.md` or equivalent) rather than hand-rolled markup, and verify the
-result visually with rodney/showboat (see `ship:rodney-tips`) before claiming it's
+result visually with rodney/showboat (see `rodney-tips`) before claiming it's
 fixed.
 
 ## Microcopy slop

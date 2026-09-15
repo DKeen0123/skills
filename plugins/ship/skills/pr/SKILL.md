@@ -15,7 +15,7 @@ description: Create a pull request with description, screenshots, and reproducti
 
 4. **Identify the issue-tracker ticket.** Check `CLAUDE.md` for which tracker the project uses (Linear, GitHub Issues, Jira, etc.) and its URL pattern. If the branch name encodes a ticket ID, link it using that pattern. If no ID is found and the doc doesn't clarify, ask the user once rather than guessing.
 
-5. **Write the PR body.** First invoke the `ship:unslop` skill and apply its prose rules to the description — no AI vocabulary, filler phrases, or corporate hedging. Then use this structure:
+5. **Write the PR body.** First invoke the `unslop` skill and apply its prose rules to the description — no AI vocabulary, filler phrases, or corporate hedging. Then use this structure:
 
 ```markdown
 ## TLDR
@@ -57,12 +57,12 @@ Step-by-step checklist to reproduce the issue / verify the fix:
    - **Verification reflects the branch head**, not an earlier state — update the
      body after a rebase or fix-up push if the results changed.
 
-6. **Screenshots (only for visual changes).** If the caller already supplied screenshot paths (e.g. from `ship:ui-review`), use those directly and skip capture below. Otherwise, if the PR includes UI changes, use the `ship:rodney-tips` skill workflow to capture screenshots proving the change works. Skip this step entirely for non-visual changes (config, backend, refactors, etc.).
+6. **Screenshots (only for visual changes).** If the caller already supplied screenshot paths (e.g. from `ui-review`), use those directly and skip capture below. Otherwise, if the PR includes UI changes, use the `rodney-tips` skill workflow to capture screenshots proving the change works. Skip this step entirely for non-visual changes (config, backend, refactors, etc.).
    - Start rodney (`rodney --local start`)
    - Start the dev server if not already running — see the project's `CLAUDE.md` for the command and how it reports its port.
    - Authenticate using whatever local-login mechanism `CLAUDE.md` documents (a dev-auth bypass, a seeded test account, etc.). If none is documented, ask the user once rather than guessing credentials.
    - Navigate to the relevant page and screenshot the before/after or final state to a temp path, e.g. `/tmp/<slug>-<name>.png`
-   - Check `gh --version` is ≥ 2.99.0. If not, stop and ask the user to upgrade `gh` (`brew upgrade gh`) — do not upload to a third-party host and do not open the PR without the screenshots. Details in `ship:rodney-tips` § Attaching Screenshots.
+   - Check `gh --version` is ≥ 2.99.0. If not, stop and ask the user to upgrade `gh` (`brew upgrade gh`) — do not upload to a third-party host and do not open the PR without the screenshots. Details in `rodney-tips` § Attaching Screenshots.
    - Reference the **local PNG paths** in the PR body as **markdown tables with a header row naming each screenshot** — never a bare list of images. `gh pr create --attach` rewrites each path to the uploaded GitHub asset in place, so the tables survive. Group related screenshots into one table per theme/surface (e.g. one table for admin views, one for a public page), max 3 columns per table so images stay readable:
      ```markdown
      | Admin tab | Creation dialog | After create |

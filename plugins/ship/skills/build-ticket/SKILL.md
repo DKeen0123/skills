@@ -1,9 +1,13 @@
 ---
 name: build-ticket
-description: Pick up a ticket and ship it end to end with subagents - Sonnet builders implement it in a worktree, then three reviewers run in parallel (Opus ship:review, Sonnet ship:ui-review, Sonnet ship:testing-review), findings route back to fresh Sonnet fixers until clean, a ship:unslop pass tidies UI and copy, then one pusher agent pushes and opens a draft PR via ship:pr. The main session only orchestrates. Usage /ship:build-ticket <ticket-id-or-url> (or paste the ticket text directly).
+description: Pick up a ticket and ship it end to end with subagents - Sonnet builders implement it in a worktree, then three reviewers run in parallel (Opus `review`, Sonnet `ui-review`, Sonnet `testing-review`), findings route back to fresh Sonnet fixers until clean, a `unslop` pass tidies UI and copy, then one pusher agent pushes and opens a draft PR via `pr`. The main session only orchestrates. Usage /build-ticket <ticket-id-or-url> (or paste the ticket text directly).
 ---
 
 # Build Ticket
+
+Skills in this collection are referred to by bare name. When installed as the
+Claude Code plugin they are namespaced `ship:<name>`; use that form when
+invoking one from Claude Code.
 
 You are the orchestrator. **You never write code, edit application files, run
 tests, start servers, or push.** You fetch the ticket, brief agents, read their
@@ -64,7 +68,7 @@ Spawn one builder: `Agent(model: "sonnet", name: "builder", subagent_type: "gene
 Its prompt = standing rules + brief + these instructions:
 
 - Set up the worktree per Phase 1 step 3 if not already created.
-- Implement the ticket. Invoke `ship:testing` before writing tests. Cover each
+- Implement the ticket. Invoke `testing` before writing tests. Cover each
   acceptance criterion on the real path: an integration test against a real
   database or an E2E test through the route; a fully-mocked unit test alone
   does not count.
@@ -102,9 +106,9 @@ the line below. Each must severity-rate every finding MAJOR / MINOR / NIT with
 
 | agent | model | instruction |
 |---|---|---|
-| `reviewer-code` | opus | Invoke the `ship:review` skill on this branch and follow it. |
-| `reviewer-ui` | sonnet | Invoke the `ship:ui-review` skill and follow it, both passes. Skip this agent entirely, and say so in the final report, only when the diff touches no UI or style file. |
-| `reviewer-tests` | sonnet | Invoke the `ship:testing-review` skill and follow it, including running the touched suites. |
+| `reviewer-code` | opus | Invoke the `review` skill on this branch and follow it. |
+| `reviewer-ui` | sonnet | Invoke the `ui-review` skill and follow it, both passes. Skip this agent entirely, and say so in the final report, only when the diff touches no UI or style file. |
+| `reviewer-tests` | sonnet | Invoke the `testing-review` skill and follow it, including running the touched suites. |
 
 Reviewers share the worktree read-only. Only `reviewer-ui` may start a rodney
 session (`--local`) and only it may start the dev server if none is running.
@@ -133,7 +137,7 @@ next directive. Do not let a fixer and a reviewer argue through you unnamed.
 
 ## Phase 4b: unslop (one Sonnet agent, after the loop converges)
 
-Spawn `unslopper` (Sonnet) with standing rules and: "Invoke the `ship:unslop`
+Spawn `unslopper` (Sonnet) with standing rules and: "Invoke the `unslop`
 skill. Audit every file in `git diff --name-only <default-branch>...HEAD`,
 both the visual checklist on changed UI and the writing checklist on
 user-facing copy, error messages, empty states, comments and any docs
@@ -154,11 +158,11 @@ Spawn `pusher` (Sonnet) with standing rules and:
 - Push in the foreground with a reasonable timeout, logging to a scratch
   file. Verify with `git ls-remote origin <branch>`. If a pre-push check
   fails, do not bypass it; report the failure with the log tail and stop.
-- Open the PR by invoking the `ship:pr` skill and following it (it writes
-  the body through `ship:unslop`, base is the default branch, never
+- Open the PR by invoking the `pr` skill and following it (it writes
+  the body through `unslop`, base is the default branch, never
   overridden to a release branch unless CLAUDE.md says otherwise). Pass it:
   the ticket URL (if any), acceptance criteria for the **How to test**
-  checklist, the screenshot paths already captured by `ship:ui-review` so
+  checklist, the screenshot paths already captured by `ui-review` so
   it does not re-shoot, and a **Review** section listing the review rounds
   and residual findings. Create it as a draft.
 - Return the PR URL.

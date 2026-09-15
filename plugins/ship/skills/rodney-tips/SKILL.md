@@ -65,7 +65,7 @@ gh pr create --draft --base <base> --title "..." --body-file /tmp/pr-body.md \
   --attach /tmp/shot-admin.png \
   --attach /tmp/shot-dialog.png
 ```
-`<base>` is the branch from `ship:pr` step 2 (the project's documented base, or the repo's default branch). The path string in the markdown must match the `--attach` path exactly. Alt text comes from the markdown.
+`<base>` is the branch from `pr` step 2 (the project's documented base, or the repo's default branch). The path string in the markdown must match the `--attach` path exactly. Alt text comes from the markdown.
 
 **Unreferenced attachments are appended** to the end of the body in flag order, using `#` for the alt text (filename if omitted):
 ```bash
@@ -73,7 +73,7 @@ gh pr create --draft --base <base> --title "..." --body-file /tmp/pr-body.md \
   --attach '/tmp/shot-1.png#Modal on navigation' \
   --attach '/tmp/shot-2.png#Empty state'
 ```
-Use this only when a bare list of images is acceptable; `ship:pr` wants tables, so reference them in the body instead.
+Use this only when a bare list of images is acceptable; `pr` wants tables, so reference them in the body instead.
 
 **Adding screenshots after the PR exists:** `gh pr edit <n> --body-file ... --attach ...` and `gh pr comment <n> --attach ...` take the same flag.
 

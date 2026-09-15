@@ -1,6 +1,6 @@
 ---
 name: ui-review
-description: Review the UI of the current branch in two passes - a visual verification of every changed surface in a real browser (rodney), and a design-system audit checking that the project's shared component library and colour/typography tokens are used where they apply. Read-only, reports findings; never edits or commits. Use when asked for a "UI review", "visual review", "design system check", or as the UI reviewer inside ship:build-ticket.
+description: Review the UI of the current branch in two passes - a visual verification of every changed surface in a real browser (rodney), and a design-system audit checking that the project's shared component library and colour/typography tokens are used where they apply. Read-only, reports findings; never edits or commits. Use when asked for a "UI review", "visual review", "design system check", or as the UI reviewer inside `build-ticket`.
 ---
 
 # UI Review
@@ -23,7 +23,7 @@ caller still has none, skip pass 2 entirely and report the affected surfaces
 as not visually verified, with that reason.
 
 Read CLAUDE.md's UI/component guidance in full before pass 1, including any
-doc it links for the design system. Invoke `ship:rodney-tips` before pass 2.
+doc it links for the design system. Invoke `rodney-tips` before pass 2.
 
 ## Pass 1: design-system audit (static)
 
@@ -91,14 +91,14 @@ linter — never fetch one ad hoc just to run it.
    you have not opened. Check: layout broken or overflowing, text clipped,
    controls off the grid, misaligned with neighbouring surfaces, low contrast,
    hover/focus/disabled states, loading flash, the change actually visible,
-   and the `ship:unslop` visual blacklist (purple gradients, icon-in-circle grids,
+   and the `unslop` visual blacklist (purple gradients, icon-in-circle grids,
    centred-everything, coloured left borders, emoji as decoration, generic
    copy, empty states with no action).
 5. Compare against a sibling surface that already does the same job (another
    list page, another detail card) and flag anything that reads as a
    different app.
-6. Keep the PNGs where they are; `ship:pr` attaches them with `gh pr create
-   --attach` (see `ship:rodney-tips`). Do not upload them anywhere.
+6. Keep the PNGs where they are; `pr` attaches them with `gh pr create
+   --attach` (see `rodney-tips`). Do not upload them anywhere.
 7. `rodney --local stop`. Leave the dev server running and report its port.
 
 ## Report

@@ -7,12 +7,28 @@ description: Set up or use one isolated git worktree (or jj workspace) per branc
 
 One git worktree (or jj workspace) per branch, driven by `just` recipes, with a hook system for project-specific setup (installing deps, forking a database, copying secrets). Ships as scripts + a `just` module, not a long-running service.
 
+This plugin is not installable through the cross-agent `skills` CLI (`npx
+skills add DKeen0123/skills`) — that tool only copies `SKILL.md` folders, and
+this plugin's value is its `just` module and shell scripts. Install it as
+the Claude Code plugin (see the plugin README), or clone the repo and copy
+`plugins/worktrees/` by hand.
+
 ## Installing into a project
 
 ```bash
 mkdir -p scripts/worktrees
 cp "${CLAUDE_PLUGIN_ROOT}/worktrees.just" scripts/worktrees/
 cp "${CLAUDE_PLUGIN_ROOT}/scripts/"* scripts/worktrees/
+chmod +x scripts/worktrees/*.sh
+```
+
+If `CLAUDE_PLUGIN_ROOT` is unset, clone the repo and copy from
+`plugins/worktrees/` instead:
+
+```bash
+git clone https://github.com/DKeen0123/skills /tmp/claude-skills
+cp /tmp/claude-skills/plugins/worktrees/worktrees.just scripts/worktrees/
+cp /tmp/claude-skills/plugins/worktrees/scripts/* scripts/worktrees/
 chmod +x scripts/worktrees/*.sh
 ```
 
