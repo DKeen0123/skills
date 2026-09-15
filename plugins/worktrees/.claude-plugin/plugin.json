@@ -1,0 +1,1 @@
+{ "name": "worktrees", "version": "0.1.0", "description": "One isolated git worktree per branch: just recipes, scripts, and optional per-worktree setup hooks.", "author": { "name": "Dan Keen" }, "license": "MIT", "keywords": ["git", "worktree", "just"] }

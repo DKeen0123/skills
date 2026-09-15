@@ -1,0 +1,10 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "dankeen",
+  "description": "Dan Keen's Claude Code plugins: isolated git worktrees per feature, and an orchestrated ticket-to-PR workflow.",
+  "owner": { "name": "Dan Keen" },
+  "plugins": [
+    { "name": "worktrees", "description": "just recipes and scripts for one isolated git worktree per branch, with optional per-worktree setup hooks.", "source": "./plugins/worktrees", "category": "development" },
+    { "name": "ship", "description": "Ticket-to-draft-PR workflow run by subagents: build, three parallel reviews, fix loop, unslop, push, PR. Includes /pr, /rodney-tips, /review, /ui-review, /testing-review, /testing, /unslop.", "source": "./plugins/ship", "category": "development" }
+  ]
+}

@@ -1,0 +1,1 @@
+{ "name": "ship", "version": "0.1.0", "description": "Ticket-to-draft-PR workflow orchestrated across subagents, plus the review, testing, screenshot and PR skills it uses.", "author": { "name": "Dan Keen" }, "license": "MIT", "keywords": ["workflow", "review", "pr", "subagents"] }

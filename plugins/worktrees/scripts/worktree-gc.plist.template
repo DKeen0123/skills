@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Weekly worktree GC. Installed by `just worktree-gc-install`, which
+  substitutes the __PLACEHOLDER__s and copies this to ~/Library/LaunchAgents/.
+  Do not edit the installed copy — edit this template and reinstall.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>__LABEL__</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-lc</string>
+        <string>__SCRIPT__ --apply</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__ROOT_DIR__</string>
+
+    <!-- Mondays at 09:30. If the Mac was asleep, launchd runs it once on wake. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key><integer>1</integer>
+        <key>Hour</key><integer>9</integer>
+        <key>Minute</key><integer>30</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>__LOG_PATH__</string>
+    <key>StandardErrorPath</key>
+    <string>__LOG_PATH__</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <!-- git is not on launchd's default PATH. Substituted at install time from
+         the installing shell, so Homebrew, MacPorts and nix all work. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>__PATH__</string>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>LowPriorityIO</key>
+    <true/>
+</dict>
+</plist>
