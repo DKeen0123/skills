@@ -1,6 +1,6 @@
 ---
 name: build-ticket
-description: Pick up a ticket and ship it end to end with subagents - Sonnet builders implement it in a worktree, then up to three reviewers run in parallel (Opus `review`, Sonnet `ui-review`, Sonnet `testing-review`; small tickets scale this down to a single generic `review` at the orchestrator's discretion), findings route back to fresh Sonnet fixers until clean, a `unslop` pass tidies UI and copy, then one pusher agent pushes and opens a draft PR via `pr`. The main session only orchestrates. Usage /build-ticket <ticket-id-or-url> (or paste the ticket text directly).
+description: Pick up a ticket and ship it end to end with subagents - Sonnet builders implement it in a worktree, then up to three reviewers run in parallel (Opus `review`, Sonnet `ui-review`, Sonnet `testing-review`; small tickets scale this down to a single generic `review` at the orchestrator's discretion), findings route back to fresh Sonnet fixers until clean (reviewers carry the `unslop` checklists, so there is no separate slop pass), then one pusher agent pushes and opens a draft PR via `pr`. The main session only orchestrates. Usage /build-ticket <ticket-id-or-url> (or paste the ticket text directly); add `ultracode` or `--workflow` to run the bundled Workflow script instead of orchestrating by hand.
 ---
 
 # Build Ticket
@@ -8,6 +8,30 @@ description: Pick up a ticket and ship it end to end with subagents - Sonnet bui
 Skills in this collection are referred to by bare name. When installed as the
 Claude Code plugin they are namespaced `ship:<name>`; use that form when
 invoking one from Claude Code.
+
+## Workflow mode (ultracode)
+
+When the invocation carries `ultracode` or `--workflow`, or a system reminder
+says ultracode is on for the session, do not orchestrate by hand. Run the
+bundled Workflow script and relay its result:
+
+```
+Workflow({ name: "ship:build-ticket-flow", args: { ticket: "<id, URL or pasted text>" } })
+```
+
+The plugin ships the script at `workflows/build-ticket-flow.js`, so it
+resolves as `ship:build-ticket-flow` once the plugin is installed. Installed
+through the `skills` CLI instead, copy that file into the project's
+`.claude/workflows/` and call it as `build-ticket-flow`, or pass `scriptPath`.
+Optional args: `shape` (`auto` | `full` | `partial` | `light`, default `auto`),
+`maxRounds` (default 2). It runs the same agents and rules as the phases
+below, with the setup steps overlapped and every review round parallel. When
+it returns, do Phase 6's report from its result (it has already posted the
+ticket comment). If it throws before pushing, read its `journal.jsonl` (path
+in the tool result) and resume with `resumeFromRunId` rather than starting
+over.
+
+## Manual mode
 
 You are the orchestrator. **You never write code, edit application files, run
 tests, start servers, or push.** You fetch the ticket, brief agents, read their
@@ -23,9 +47,10 @@ Paste this block verbatim into every builder, fixer, reviewer and pusher prompt:
 ```
 Read CLAUDE.md at the repo root first, and any docs it points to for the files you touch.
 Worktree: <absolute path>. Branch: <branch>. Base: <default branch>. Work only inside this worktree.
-Machine safety: respect any concurrency limits or safe test-run practices CLAUDE.md documents. Default when silent: never run the full test suite, only the files you touched; if the runner supports a worker cap, cap it at 2.
+Machine safety: respect any concurrency limits or safe test-run practices CLAUDE.md documents. Default when silent: never run the full test suite, only the files you touched; if the runner supports a worker cap, cap it at 2; before a test run, wait for any other test run on the machine to finish (typecheck and lint need no wait).
+Checks: use the typecheck, lint and test commands CLAUDE.md gives, nothing slower. Typecheck once, at the end, not after every edit. Do not re-run a typecheck, lint or suite that the previous agent's report shows green unless your own edits touched what it covers; the push hook (if the repo has one) runs the full gate at push time.
 Git: commit only. NEVER push. NEVER --no-verify. NEVER touch the default branch.
-Report back with: files changed (one line each), tests added/changed and how you ran them, routes/surfaces affected, anything you could not do and why.
+Report back with: files changed (one line each), tests added/changed and how you ran them, the exact check commands you ran and their result, routes/surfaces affected, anything you could not do and why.
 ```
 
 Rulings: number every directive you send (`R1`, `R2`…). Never reverse one
@@ -50,14 +75,19 @@ a time: a fixer starts only after the previous builder/fixer has reported.
    `just worktree-new <branch>` if `just --list 2>/dev/null | grep -q
    worktree-new`, else `git worktree add ../<repo-name>-<branch> -b
    <branch>`. If worktree creation warns about a database or migration
-   problem, follow the fix CLAUDE.md documents for it. Read the absolute
-   worktree path for the standing-rules block from this command's own
-   output, or from `git worktree list` — the other read-only git command
-   you may run yourself (see Phase 3).
+   problem, follow the fix CLAUDE.md documents for it. **Spawn `prep`
+   (Sonnet) to do this now**, before writing the brief: it creates the
+   worktree, applies any documented setup fix, and, if the ticket touches a
+   route or component, starts the dev server the way CLAUDE.md describes
+   and reports the port. Setup is minutes; it overlaps with step 4 instead
+   of sitting inside the builder. Read the absolute worktree path for the
+   standing-rules block from `prep`'s report, or from `git worktree list` —
+   the other read-only git command you may run yourself (see Phase 3).
 4. Write a **brief** you will reuse for every agent: ticket id and URL (if
    any), the problem in your words, acceptance criteria as a numbered list,
    links to any docs CLAUDE.md names as relevant, out-of-scope notes. Tell
-   the user the branch name and go.
+   the user the branch name and go. Spawn the builder as soon as `prep`
+   reports.
 
 If the ticket contradicts itself or lacks something no agent could infer, ask
 the user once, then proceed.
@@ -67,7 +97,8 @@ the user once, then proceed.
 Spawn one builder: `Agent(model: "sonnet", name: "builder", subagent_type: "general-purpose")`.
 Its prompt = standing rules + brief + these instructions:
 
-- Set up the worktree per Phase 1 step 3 if not already created.
+- The worktree already exists (`prep` created it); the dev server port, if
+  any, is in the brief. Do not start a second server.
 - Implement the ticket. Invoke `testing` before writing tests. Cover each
   acceptance criterion on the real path: an integration test against a real
   database or an E2E test through the route; a fully-mocked unit test alone
@@ -76,11 +107,13 @@ Its prompt = standing rules + brief + these instructions:
   and toast/notification patterns, as CLAUDE.md documents.
 - Update any doc CLAUDE.md requires for the domain you changed, in the same
   commit.
-- Run the typecheck, lint, and test commands CLAUDE.md gives, scoped to what
-  you touched. Commit as `feat|fix: <desc> (<ticket-id>)` (omit the
-  parenthetical if there is no ticket id), with whatever commit trailer the
-  project or harness specifies, if any. Do not push.
-- Leave the dev server running if it started one, and report the port.
+- Run the typecheck once, lint on changed files, and the tests you wrote,
+  with the commands CLAUDE.md gives. Commit as `feat|fix: <desc> (<ticket-id>)`
+  (omit the parenthetical if there is no ticket id), with whatever commit
+  trailer the project or harness specifies, if any. Do not push.
+- Verify a changed surface visually once with rodney if it is new or its
+  layout changed; do not loop on screenshots, `reviewer-ui` does the full pass.
+- Report the check commands and results verbatim so reviewers can trust them.
 
 Split into parallel builders only when the ticket has slices with disjoint file
 sets. Then each builder owns a named file list, none commits, and after all
@@ -124,65 +157,69 @@ Rules for scaling down:
 ### Spawn
 
 Spawn the chosen reviewers in a single message so they run concurrently. Each
-prompt = standing rules + review brief + "You are read-only: no edits, no
-commits" + the line below. Each must severity-rate every finding MAJOR / MINOR /
-NIT with `file:line` and a one-line fix.
+prompt = standing rules + review brief (including the builder's check results)
++ "You are read-only: no edits, no commits" + the line below. Each must
+severity-rate every finding MAJOR / MINOR / NIT with `file:line` and a one-line
+fix, and must mark a finding `pre-existing` when the defect is not introduced
+by this diff (those go to the PR body, never to a fixer). A MAJOR that claims a
+test cannot fail must be demonstrated (mutate the code under test, run it,
+quote the output); an assertion from types alone is a MINOR at most.
 
 | agent | model | instruction |
 |---|---|---|
-| `reviewer-code` | opus | Invoke the `review` skill on this branch and follow it. |
-| `reviewer-ui` | sonnet | Invoke the `ui-review` skill and follow it, both passes. |
-| `reviewer-tests` | sonnet | Invoke the `testing-review` skill and follow it, including running the touched suites. |
-| `reviewer` (Light only) | opus | Invoke the `review` skill on this branch and follow it. Also confirm the builder ran the touched tests, and if a UI file changed, load the surface once with rodney and say what you saw. |
+| `reviewer-code` | opus | Invoke the `review` skill on this branch and follow it. Also run the `unslop` writing checklist (audit mode) over user-facing copy, error messages, empty states and docs in the diff and report slop as findings. |
+| `reviewer-ui` | sonnet | Invoke the `ui-review` skill and follow it, both passes, including the `unslop` visual blacklist in pass 2. Mobile viewport only if the ticket asks for it or the surface is customer-facing. |
+| `reviewer-tests` | sonnet | Invoke the `testing-review` skill and follow it. It is the only round-1 reviewer that runs suites; skip any the builder's report shows green and the diff did not change since. |
+| `reviewer` (Light only) | opus | Invoke the `review` skill on this branch and follow it, plus the `unslop` writing checklist. Also confirm the builder ran the touched tests, and if a UI file changed, load the surface once with rodney and say what you saw. |
 
 Reviewers share the worktree read-only. Only `reviewer-ui` (or `reviewer` in
 the Light shape) may start a rodney session (`--local`) and only it may start
-the dev server if none is running. In the Light shape the single report is the
+the dev server if none is running. `reviewer-code` runs no suites and no lint
+(the builder's report and the push hook cover them); it may run a single file
+when a finding depends on it. In the Light shape the single report is the
 one reviewer report for Phase 4, and a re-review is another `reviewer-<n>`
 scoped to the fixed findings.
 
 ## Phase 4: fix loop
 
-1. Merge the reviewer reports. De-duplicate. Drop a finding only if you can say in
-   one sentence why it is wrong, and list every dropped finding in the final
-   report.
-2. Group the remaining MAJOR and MINOR findings into one fix task (or a few,
-   by area, run **sequentially** since one worktree has one writer). NITs go in
-   the same task only if cheap.
+1. Merge the reviewer reports. De-duplicate. **Triage before dispatch**: a
+   finding marked pre-existing, or one asking for a test layer the repo does
+   not have, goes to the PR body's Review section or a new ticket, not to a
+   fixer. Drop a finding only if you can say in one sentence why it is wrong,
+   and list every dropped finding in the final report.
+2. Group the remaining MAJOR and MINOR findings into one fix task. NITs go in
+   the same task only if cheap. Split into parallel fixers only when the
+   groups have disjoint file sets; otherwise one fixer.
 3. Spawn `fixer-<n>` (Sonnet) with standing rules + the findings verbatim
    (file:line, reviewer's wording, reviewer's suggested fix) + "fix each one,
-   re-run typecheck, lint and the touched tests, commit, report which findings
-   you fixed and which you disagree with and why".
-4. Re-review: spawn only the reviewers whose findings were touched, scoped to
-   "confirm these findings are resolved and the fixes introduced nothing new"
-   (fresh agents, new names, e.g. `reviewer-ui-2`). A reviewer that returned
-   only NITs is not re-run.
-5. Converge when no MAJOR or MINOR remains. Cap at three rounds; after that,
-   list the residuals for the user and continue to Phase 5.
+   update any doc CLAUDE.md requires for what you change, run typecheck once,
+   lint and the touched tests, commit, report which findings you fixed and
+   which you disagree with and why. Screenshot with rodney only for a finding
+   that was visual, once, and do not poll for a surface to render."
+4. Re-review only when the round had a MAJOR. Spawn only the reviewers whose
+   findings were touched, scoped to the fix commit (`git diff <builder-sha>..HEAD`)
+   and to "confirm these findings are resolved and the fixes introduced nothing
+   new" (fresh agents, new names, e.g. `reviewer-ui-2`). `reviewer-ui-<n>`
+   re-shoots only the surfaces the fix touched. A reviewer that returned only
+   NITs is not re-run.
+5. When a round's findings were all MINOR/NIT, one fixer batches them and the
+   loop ends with no re-review; the push hook and the human review cover
+   them. Cap at two rounds; after that, list the residuals for the user and
+   continue to Phase 5. A third round has only ever found churn on the second
+   round's fix.
 
 A fixer's disagreement with a finding is settled by you, in writing, in the
 next directive. Do not let a fixer and a reviewer argue through you unnamed.
-
-## Phase 4b: unslop (one Sonnet agent, after the loop converges)
-
-Spawn `unslopper` (Sonnet) with standing rules and: "Invoke the `unslop`
-skill. Audit every file in `git diff --name-only <default-branch>...HEAD`,
-both the visual checklist on changed UI and the writing checklist on
-user-facing copy, error messages, empty states, comments and any docs
-changed. Fix in place using the project's shared component library,
-re-verify changed surfaces with rodney, run the typecheck/lint commands
-CLAUDE.md gives, commit as `chore: unslop (<ticket-id>)` (omit the
-parenthetical if there is no ticket id). Report each fix and each finding you
-left alone with a one-line reason." Skip only when the diff has no UI and no
-prose; say so in the final report. If it restyled a surface, run a scoped
-`reviewer-ui-<n>` once more on those files before Phase 5.
 
 ## Phase 5: push and PR (one Sonnet pusher)
 
 Spawn `pusher` (Sonnet) with standing rules and:
 
-- This workflow runs a single pusher. If CLAUDE.md documents a wait command
-  for its push hook, run it; otherwise push directly.
+- This workflow runs a single pusher. If the repo has a push hook and
+  CLAUDE.md documents a wait command for it, run it with a two-minute cap;
+  otherwise push directly. Any wait must poll with an anchored `pgrep -f`
+  on the hook script's path (`^bash <path-to-hook>`); a `ps | grep -E`
+  alternation matches its own shell and spins until the tool times out.
 - Push in the foreground with a reasonable timeout, logging to a scratch
   file. Verify with `git ls-remote origin <branch>`. If a pre-push check
   fails, do not bypass it; report the failure with the log tail and stop.
@@ -191,8 +228,9 @@ Spawn `pusher` (Sonnet) with standing rules and:
   overridden to a release branch unless CLAUDE.md says otherwise). Pass it:
   the ticket URL (if any), acceptance criteria for the **How to test**
   checklist, the screenshot paths already captured by `ui-review` so
-  it does not re-shoot, and a **Review** section listing the review rounds
-  and residual findings. Create it as a draft.
+  it does not re-shoot, and a **Review** section listing the review rounds,
+  residual findings and pre-existing findings triaged out. Create it as a
+  draft. Do not re-shoot screenshots and do not start a dev server or rodney.
 - Return the PR URL.
 
 If the push check fails, spawn a fixer for the reported failure (see any
@@ -205,9 +243,8 @@ failure → fix table CLAUDE.md names), then a new pusher.
    Progress; the user moves it on review.
 2. Report to the user, in this order: PR URL; what was built in three lines;
    the review shape chosen (Full / Partial / Light) and, if not Full, the
-   one-line reason; review rounds and what each round fixed; findings dropped
-   or residual, with
-   your one-line reason each; the local login URL per CLAUDE.md, if any, for
+   one-line reason; review rounds and what each round fixed; findings dropped,
+   triaged out as pre-existing, or residual, with your one-line reason each; the local login URL per CLAUDE.md, if any, for
    the main affected route.
 
 Never merge. Never mark the ticket done.

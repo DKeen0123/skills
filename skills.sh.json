@@ -9,7 +9,7 @@
     },
     {
       "title": "ship",
-      "description": "Ticket-to-draft-PR workflow run by subagents: build, three parallel reviews, fix loop, unslop, push, PR.",
+      "description": "Ticket-to-draft-PR workflow run by subagents: build, three parallel reviews, fix loop, push, PR (workflow-script form included for Claude Code).",
       "skills": ["build-ticket", "pr", "review", "ui-review", "testing-review", "testing", "unslop", "rodney-tips"]
     }
   ]
