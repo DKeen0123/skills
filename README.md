@@ -8,7 +8,7 @@ agent (Cursor, Codex, Copilot, Windsurf, etc.) through the cross-agent
 | Plugin | What it gives you |
 |---|---|
 | `worktrees` | One isolated git worktree per branch, driven by `just` recipes, with per-worktree setup hooks (env files, deps, a forked database). |
-| `ship` | `/build-ticket`: a ticket goes in, a reviewed draft PR comes out. Subagents build, review from three angles, fix, tidy, push. Ships with the skills it calls: `pr`, `review`, `ui-review`, `testing-review`, `testing`, `unslop`, `rodney-tips`. |
+| `ship` | `/build-ticket`: a ticket goes in, a reviewed draft PR comes out. Subagents build, review from three angles, fix, push; add `ultracode` to run it as a deterministic Workflow script instead. Ships with the skills it calls: `pr`, `review`, `ui-review`, `testing-review`, `testing`, `unslop`, `rodney-tips`. |
 
 ## Install
 

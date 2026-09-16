@@ -9,10 +9,18 @@ Skills in this collection are referred to by bare name. When installed as the
 Claude Code plugin they are namespaced `ship:<name>`; use that form when
 invoking one from Claude Code.
 
-- **`build-ticket`** — picks up a ticket and ships it end to end:
-  builds it in a worktree, runs `review`, `ui-review`, and
-  `testing-review` in parallel, routes findings back to fixers, runs
-  `unslop`, then pushes and opens a draft PR via `pr`.
+- **`build-ticket`** — picks up a ticket and ships it end to end: a prep
+  agent creates the worktree while the brief is written, a builder
+  implements it, `review`, `ui-review` and `testing-review` run in
+  parallel (each carrying the `unslop` checklist for its axis), findings
+  route back to fixers (re-review only after a round with a MAJOR, two
+  rounds max), then one pusher pushes and opens a draft PR via `pr`.
+  `/build-ticket <ticket> ultracode` runs the same process as the bundled
+  Workflow script `ship:build-ticket-flow` (`workflows/build-ticket-flow.js`):
+  setup overlaps planning, the review lenses run alongside a typecheck/lint
+  dry run of the push gate, and re-reviews are scoped to the fix commit.
+  Through the `skills` CLI the script is not delivered; copy it into your
+  project's `.claude/workflows/` to get workflow mode.
 - **`pr`** — commits any loose changes, writes a PR body (TLDR / Why /
   Screenshots / How to test) via `unslop`, captures UI screenshots via
   `rodney-tips` when relevant, and opens the PR with `gh`.
