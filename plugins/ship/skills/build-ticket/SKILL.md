@@ -1,6 +1,6 @@
 ---
 name: build-ticket
-description: Pick up a ticket and ship it end to end with subagents - Sonnet builders implement it in a worktree, then up to three reviewers run in parallel (Opus `review`, Sonnet `ui-review`, Sonnet `testing-review`; small tickets scale this down to a single generic `review` at the orchestrator's discretion), findings route back to fresh Sonnet fixers until clean (reviewers carry the `unslop` checklists, so there is no separate slop pass), then one pusher agent pushes and opens a draft PR via `pr`. The main session only orchestrates. Usage /build-ticket <ticket-id-or-url> (or paste the ticket text directly); add `ultracode` or `--workflow` to run the bundled Workflow script instead of orchestrating by hand.
+description: Pick up a ticket and ship it end to end with subagents - role agents (Sonnet builders at medium effort, capped turns, handing off when long) implement it in a worktree, then up to three reviewers run in parallel (Opus `review`, Sonnet `ui-review`, Sonnet `testing-review`; small tickets scale this down to a single generic `review` at the orchestrator's discretion), findings route back to fresh Sonnet fixers until clean (reviewers carry the `unslop` checklists, so there is no separate slop pass), then one pusher agent pushes and opens a draft PR via `pr`. The main session only orchestrates. Usage /build-ticket <ticket-id-or-url> (or paste the ticket text directly); add `ultracode` or `--workflow` to run the bundled Workflow script instead of orchestrating by hand.
 ---
 
 # Build Ticket
@@ -50,8 +50,42 @@ Worktree: <absolute path>. Branch: <branch>. Base: <default branch>. Work only i
 Machine safety: respect any concurrency limits or safe test-run practices CLAUDE.md documents. Default when silent: never run the full test suite, only the files you touched; if the runner supports a worker cap, cap it at 2; before a test run, wait for any other test run on the machine to finish (typecheck and lint need no wait).
 Checks: use the typecheck, lint and test commands CLAUDE.md gives, nothing slower. Typecheck once, at the end, not after every edit. Do not re-run a typecheck, lint or suite that the previous agent's report shows green unless your own edits touched what it covers; the push hook (if the repo has one) runs the full gate at push time.
 Git: commit only. NEVER push. NEVER --no-verify. NEVER touch the default branch.
+Context: every tool call re-reads your whole transcript. Combine related shell commands into one call; never poll with sleep loops; read only the line ranges you need; do not re-read a file you just edited; summarise command output in your report instead of pasting it. After roughly 120 tool calls, or when a plan step is done and the next is large, commit (WIP is fine) and report `handoff: true` with the remaining steps and the sha; a fresh agent continues.
 Report back with: files changed (one line each), tests added/changed and how you ran them, the exact check commands you ran and their result, routes/surfaces affected, anything you could not do and why.
 ```
+
+## Agent roles
+
+Every agent is spawned by role with `subagent_type` set to one of the
+definitions in this plugin's `agents/`: `runner`, `builder`, `fixer`,
+`reviewer-code`, `reviewer-ui`, `reviewer-tests`, `pusher` (namespaced
+`ship:<name>` when installed as the Claude Code plugin). The definition
+fixes the model, the reasoning effort and a turn cap, so **do not pass
+`model`** on the Agent call. Effort is medium for builders and fixers, high
+for the Opus code reviewer, low for runner and pusher.
+
+Installed through the `skills` CLI the agent definitions are not delivered.
+Then spawn `general-purpose` with the model from the table below and paste
+the Context line of the standing rules into every prompt; effort stays at
+the session default.
+
+## Context budget and handoff
+
+A subagent's cost is its transcript length times its request count, so
+a builder that runs 600 tool calls in one context costs more than three
+builders of 200. The agent definitions carry the budget rules (batch shell
+commands, no polling, touched tests only, hand off after roughly 120 tool
+calls). Your side of the contract:
+
+- On a report with `handoff: true`, spawn `builder-<n+1>` (or `fixer-<n+1>`)
+  with the brief, the remaining steps verbatim, and the commit sha. Do not
+  send follow-up work to the finished agent.
+- If an agent stops with no report (it hit its turn cap), run
+  `git -C <worktree> log --oneline <default branch>..HEAD` and
+  `git -C <worktree> status --short` (read-only, allowed), then spawn a
+  continuation agent with what landed and what is left.
+- Brief the next agent with the plan step it starts from, not the previous
+  agent's transcript.
 
 Rulings: number every directive you send (`R1`, `R2`…). Never reverse one
 without first sending a freeze and getting an ack. One writer per worktree at
@@ -75,7 +109,7 @@ a time: a fixer starts only after the previous builder/fixer has reported.
    `just worktree-new <branch>` if `just --list 2>/dev/null | grep -q
    worktree-new`, else `git worktree add ../<repo-name>-<branch> -b
    <branch>`. If worktree creation warns about a database or migration
-   problem, follow the fix CLAUDE.md documents for it. **Spawn `prep`
+   problem, follow the fix CLAUDE.md documents for it. **Spawn `prep` (`subagent_type: "runner"`)
    (Sonnet) to do this now**, before writing the brief: it creates the
    worktree, applies any documented setup fix, and, if the ticket touches a
    route or component, starts the dev server the way CLAUDE.md describes
@@ -94,7 +128,7 @@ the user once, then proceed.
 
 ## Phase 2: build (Sonnet)
 
-Spawn one builder: `Agent(model: "sonnet", name: "builder", subagent_type: "general-purpose")`.
+Spawn one builder: `Agent(name: "builder", subagent_type: "builder")`.
 Its prompt = standing rules + brief + these instructions:
 
 - The worktree already exists (`prep` created it); the dev server port, if
@@ -117,7 +151,7 @@ Its prompt = standing rules + brief + these instructions:
 
 Split into parallel builders only when the ticket has slices with disjoint file
 sets. Then each builder owns a named file list, none commits, and after all
-report you spawn one `integrator` (Sonnet) to typecheck, lint, resolve seams
+report you spawn one `integrator` (`subagent_type: "builder"`) to typecheck, lint, resolve seams
 and make the single commit.
 
 If a builder reports it is blocked, spawn a fresh builder with the missing
@@ -165,11 +199,11 @@ by this diff (those go to the PR body, never to a fixer). A MAJOR that claims a
 test cannot fail must be demonstrated (mutate the code under test, run it,
 quote the output); an assertion from types alone is a MINOR at most.
 
-| agent | model | instruction |
+| agent (= `subagent_type`) | model, effort | instruction |
 |---|---|---|
-| `reviewer-code` | opus | Invoke the `review` skill on this branch and follow it. Also run the `unslop` writing checklist (audit mode) over user-facing copy, error messages, empty states and docs in the diff and report slop as findings. |
-| `reviewer-ui` | sonnet | Invoke the `ui-review` skill and follow it, both passes, including the `unslop` visual blacklist in pass 2. Mobile viewport only if the ticket asks for it or the surface is customer-facing. |
-| `reviewer-tests` | sonnet | Invoke the `testing-review` skill and follow it. It is the only round-1 reviewer that runs suites; skip any the builder's report shows green and the diff did not change since. |
+| `reviewer-code` | opus, high | Invoke the `review` skill on this branch and follow it. Also run the `unslop` writing checklist (audit mode) over user-facing copy, error messages, empty states and docs in the diff and report slop as findings. |
+| `reviewer-ui` | sonnet, medium | Invoke the `ui-review` skill and follow it, both passes, including the `unslop` visual blacklist in pass 2. Mobile viewport only if the ticket asks for it or the surface is customer-facing. |
+| `reviewer-tests` | sonnet, medium | Invoke the `testing-review` skill and follow it. It is the only round-1 reviewer that runs suites; skip any the builder's report shows green and the diff did not change since. |
 | `reviewer` (Light only) | opus | Invoke the `review` skill on this branch and follow it, plus the `unslop` writing checklist. Also confirm the builder ran the touched tests, and if a UI file changed, load the surface once with rodney and say what you saw. |
 
 Reviewers share the worktree read-only. Only `reviewer-ui` (or `reviewer` in
@@ -190,7 +224,7 @@ scoped to the fixed findings.
 2. Group the remaining MAJOR and MINOR findings into one fix task. NITs go in
    the same task only if cheap. Split into parallel fixers only when the
    groups have disjoint file sets; otherwise one fixer.
-3. Spawn `fixer-<n>` (Sonnet) with standing rules + the findings verbatim
+3. Spawn `fixer-<n>` (`subagent_type: "fixer"`) with standing rules + the findings verbatim
    (file:line, reviewer's wording, reviewer's suggested fix) + "fix each one,
    update any doc CLAUDE.md requires for what you change, run typecheck once,
    lint and the touched tests, commit, report which findings you fixed and
@@ -211,9 +245,9 @@ scoped to the fixed findings.
 A fixer's disagreement with a finding is settled by you, in writing, in the
 next directive. Do not let a fixer and a reviewer argue through you unnamed.
 
-## Phase 5: push and PR (one Sonnet pusher)
+## Phase 5: push and PR (one pusher)
 
-Spawn `pusher` (Sonnet) with standing rules and:
+Spawn `pusher` (`subagent_type: "pusher"`) with standing rules and:
 
 - This workflow runs a single pusher. If the repo has a push hook and
   CLAUDE.md documents a wait command for it, run it with a two-minute cap;
@@ -233,7 +267,7 @@ Spawn `pusher` (Sonnet) with standing rules and:
   draft. Do not re-shoot screenshots and do not start a dev server or rodney.
 - Return the PR URL.
 
-If the push check fails, spawn a fixer for the reported failure (see any
+If the push check fails, spawn a `fixer` for the reported failure (see any
 failure → fix table CLAUDE.md names), then a new pusher.
 
 ## Phase 6: close out
