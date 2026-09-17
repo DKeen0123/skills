@@ -11,7 +11,9 @@ invoking one from Claude Code.
 
 - **`build-ticket`** — picks up a ticket and ships it end to end: a prep
   agent creates the worktree while the brief is written, a builder
-  implements it, `review`, `ui-review` and `testing-review` run in
+  implements it (every agent is spawned by role from `agents/`, which
+  fixes its model, effort and turn cap, and hands off to a fresh agent
+  instead of running one context long), `review`, `ui-review` and `testing-review` run in
   parallel (each carrying the `unslop` checklist for its axis), findings
   route back to fixers (re-review only after a round with a MAJOR, two
   rounds max), then one pusher pushes and opens a draft PR via `pr`.

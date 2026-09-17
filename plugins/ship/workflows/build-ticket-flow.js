@@ -28,6 +28,7 @@ Worktree: ${wt}. Branch: ${branch}. Base: the default branch. Work only inside t
 Machine safety: respect any concurrency limits or safe test-run practices CLAUDE.md documents. Default when silent: never run the full test suite unless your task says so, only the files you touched; if the runner supports a worker cap, cap it at 2; before a test run, wait for any other test run on the machine to finish (typecheck and lint need no wait).
 Checks: use the typecheck, lint and test commands CLAUDE.md gives, nothing slower. Typecheck once, at the end. Do not re-run a typecheck, lint or suite that a previous agent's report shows green unless your own edits touched what it covers; the pre-push hook runs the full gate at push time.
 Git: commit only. NEVER push. NEVER --no-verify. NEVER touch the default branch.
+Context: every tool call re-reads your whole transcript. Combine related shell commands into one call; never poll with sleep loops; read only the line ranges you need; do not re-read a file you just edited; summarise command output instead of pasting it. After roughly 120 tool calls, or when a plan step is done and the next is large, commit (WIP is fine) and return handoff=true with the remaining steps and the sha; a fresh agent continues.
 Your final message is machine-read: return the structured output only, no prose for a human.`
 
 const briefText = (b) => `
@@ -119,6 +120,7 @@ const [worktreeResult, plan] = await parallel([
   () => agent(`Create the worktree for branch ${BRANCH} at ${WT} from ${REPO_DESC}, using the repo's own tooling if it has any (\`just worktree-new ${BRANCH}\` when \`just --list\` offers it, after any setup CLAUDE.md requires), else \`git worktree add ${WT} -b ${BRANCH}\` followed by the dependency install CLAUDE.md gives. If setup warns about a database or migration problem, apply the fix CLAUDE.md documents. Confirm the worktree exists, \`git -C ${WT} status\` is clean, and dependencies are installed. Do not edit any file.${brief.touchesUi ? ' Then start the dev server the way CLAUDE.md says to start it in an agent/background context, wait until it answers, and report the port.' : ' Do not start a dev server.'}`, {
     label: 'worktree',
     phase: 'Prepare',
+    agentType: 'runner',
     model: 'sonnet',
     effort: 'low',
     schema: {
@@ -184,6 +186,8 @@ const BUILD_SCHEMA = {
     devServerPort: { type: 'number', description: '0 if none started' },
     couldNotDo: { type: 'array', items: { type: 'string' } },
     commit: { type: 'string', description: 'commit sha, or empty if not committed' },
+    handoff: { type: 'boolean', description: 'true when you stopped at a boundary with work left; a fresh builder continues from remainingSteps' },
+    remainingSteps: { type: 'array', items: { type: 'string' }, description: 'exact steps still to do when handoff is true' },
   },
 }
 
@@ -199,7 +203,7 @@ ${PLAN}
 You own slice "${s.name}" and may edit ONLY these files (create them if new): ${s.files.join(', ')}. Other builders own the rest concurrently in the same worktree.
 ${s.instructions}
 ${BUILD_RULES}
-Run the tests you wrote (the integrator typechecks). DO NOT COMMIT; an integrator commits after all slices land. Do not start a dev server.`, { label: `build:${s.name}`, phase: 'Build', model: 'sonnet', schema: BUILD_SCHEMA })
+Run the tests you wrote (the integrator typechecks). DO NOT COMMIT; an integrator commits after all slices land. Do not start a dev server.`, { label: `build:${s.name}`, phase: 'Build', agentType: 'builder', model: 'sonnet', effort: 'medium', schema: BUILD_SCHEMA })
   ))).filter(Boolean)
   build = await agent(`${RULES}
 ${BRIEF}
@@ -207,14 +211,23 @@ ${BRIEF}
 Parallel builders left uncommitted work in the worktree. Their reports:
 ${JSON.stringify(parts, null, 1)}
 
-Typecheck once, lint the changed files, resolve any seams between slices, run every test they wrote, then make ONE commit: \`feat|fix: <desc>${brief.ticketSource === 'text' ? '' : ` (${brief.ticketId})`}\` with whatever commit trailer the project or harness specifies.${worktreeResult.devServerPort ? ` A dev server is already running on port ${worktreeResult.devServerPort}; do not start another.` : ' Do not start a dev server.'}`, { label: 'integrate', phase: 'Build', model: 'sonnet', schema: BUILD_SCHEMA })
+Typecheck once, lint the changed files, resolve any seams between slices, run every test they wrote, then make ONE commit: \`feat|fix: <desc>${brief.ticketSource === 'text' ? '' : ` (${brief.ticketId})`}\` with whatever commit trailer the project or harness specifies.${worktreeResult.devServerPort ? ` A dev server is already running on port ${worktreeResult.devServerPort}; do not start another.` : ' Do not start a dev server.'}`, { label: 'integrate', phase: 'Build', agentType: 'builder', model: 'sonnet', effort: 'medium', schema: BUILD_SCHEMA })
 } else {
   build = await agent(`${RULES}
 ${BRIEF}
 ${PLAN}
 ${BUILD_RULES}
 Run typecheck once, lint on changed files, and the tests you wrote, with the commands CLAUDE.md gives. Commit as \`feat|fix: <desc>${brief.ticketSource === 'text' ? '' : ` (${brief.ticketId})`}\` with whatever commit trailer the project or harness specifies. Do not push.
-${worktreeResult.devServerPort ? `A dev server is already running on port ${worktreeResult.devServerPort}; do not start another. If you changed a rendered surface, load it once with rodney (\`--local\`) to confirm it renders; do not loop on screenshots, the UI reviewer does the full pass.` : 'Do not start a dev server.'}`, { label: 'build', phase: 'Build', model: 'sonnet', schema: BUILD_SCHEMA })
+${worktreeResult.devServerPort ? `A dev server is already running on port ${worktreeResult.devServerPort}; do not start another. If you changed a rendered surface, load it once with rodney (\`--local\`) to confirm it renders; do not loop on screenshots, the UI reviewer does the full pass.` : 'Do not start a dev server.'}`, { label: 'build', phase: 'Build', agentType: 'builder', model: 'sonnet', effort: 'medium', schema: BUILD_SCHEMA })
+  for (let hop = 2; build && build.handoff && hop <= 4; hop++) {
+    log(`Builder handed off after ${hop - 1} pass(es); ${(build.remainingSteps || []).length} steps left`)
+    build = await agent(`${RULES}
+${BRIEF}
+A previous builder implemented part of this ticket and stopped at a boundary. What landed is committed (${build.commit || 'no commit; check git status'}); run \`git log --oneline <default branch>..HEAD\` and \`git status --short\` once to orient, do not re-read its work beyond the files the remaining steps touch. Continue from these steps and finish the ticket per CLAUDE.md's definition of done:
+${(build.remainingSteps || []).map((st, k) => `  ${k + 1}. ${st}`).join('\n')}
+Commit as \`feat|fix: <desc>${brief.ticketSource === 'text' ? '' : ` (${brief.ticketId})`}\` with whatever commit trailer the project or harness specifies. Do not start a dev server.`, { label: `build-${hop}`, phase: 'Build', agentType: 'builder', model: 'sonnet', effort: 'medium', schema: BUILD_SCHEMA })
+  }
+  if (build && build.handoff) log('Builder still reports work left after 4 passes; continuing to review with what landed')
 }
 if (!build || !build.commit) throw new Error(`build did not commit: ${build && build.couldNotDo.join('; ')}`)
 if (!build.devServerPort && worktreeResult.devServerPort) build.devServerPort = worktreeResult.devServerPort
@@ -246,14 +259,14 @@ You are READ-ONLY: no edits, no commits. Severity-rate every finding MAJOR / MIN
 const lensPrompt = (lens, scope) => {
   const scoped = scope ? `\nSCOPE: a fixer just addressed these findings in commits after ${scope.sha}. Review \`git diff ${scope.sha}..HEAD\` only, not the whole branch. Confirm each is resolved and that the fixes introduced nothing new. For the ui lens, re-shoot only the surfaces the fix touched. Report only what is still wrong or newly wrong:\n${scope.text}` : ''
   const common = `${RULES}\n${REVIEW_BRIEF()}${scoped}\nReport lens="${lens}".`
-  if (lens === 'code') return { model: 'opus', prompt: `${common}\nInvoke the \`review\` skill (Skill tool, name "review", or "ship:review" when installed as the plugin) on this branch and follow it. Run no suites and no lint (the builder's checks and the push hook cover them); run a single test file only when a finding depends on it. Also apply the \`unslop\` writing checklist (Skill tool, name "unslop" / "ship:unslop", audit mode only) to user-facing copy, error messages, empty states and any docs in the diff, and report slop as findings so one fixer handles both.` }
-  if (lens === 'ui') return { model: 'sonnet', prompt: `${common}\nInvoke the \`ui-review\` skill (Skill tool, name "ui-review" / "ship:ui-review") and follow it, both passes. You are the only agent allowed to start rodney (\`--local\`) or the dev server if none is running. Include the \`unslop\` visual blacklist in pass 2 and report slop as findings. Desktop viewport only unless the ticket asks for mobile or the surface is customer-facing. Return every screenshot path.` }
-  return { model: 'sonnet', prompt: `${common}\nInvoke the \`testing-review\` skill (Skill tool, name "testing-review" / "ship:testing-review") and follow it, including running the touched suites (capped per the standing rules). You are the only reviewer that runs suites; skip any the builder's checks show green unless the diff changed them since.` }
+  if (lens === 'code') return { model: 'opus', effort: 'high', agentType: 'reviewer-code', prompt: `${common}\nInvoke the \`review\` skill (Skill tool, name "review", or "ship:review" when installed as the plugin) on this branch and follow it. Run no suites and no lint (the builder's checks and the push hook cover them); run a single test file only when a finding depends on it. Also apply the \`unslop\` writing checklist (Skill tool, name "unslop" / "ship:unslop", audit mode only) to user-facing copy, error messages, empty states and any docs in the diff, and report slop as findings so one fixer handles both.` }
+  if (lens === 'ui') return { model: 'sonnet', effort: 'medium', agentType: 'reviewer-ui', prompt: `${common}\nInvoke the \`ui-review\` skill (Skill tool, name "ui-review" / "ship:ui-review") and follow it, both passes. You are the only agent allowed to start rodney (\`--local\`) or the dev server if none is running. Include the \`unslop\` visual blacklist in pass 2 and report slop as findings. Desktop viewport only unless the ticket asks for mobile or the surface is customer-facing. Return every screenshot path.` }
+  return { model: 'sonnet', effort: 'medium', agentType: 'reviewer-tests', prompt: `${common}\nInvoke the \`testing-review\` skill (Skill tool, name "testing-review" / "ship:testing-review") and follow it, including running the touched suites (capped per the standing rules). You are the only reviewer that runs suites; skip any the builder's checks show green unless the diff changed them since.` }
 }
 
 const runReviews = (activeLenses, scope, round) => parallel(activeLenses.map((lens) => () => {
   const p = lensPrompt(lens, scope)
-  return agent(p.prompt, { label: `review:${lens}${round > 1 ? `-${round}` : ''}`, phase: round > 1 ? 'Fix' : 'Review', model: p.model, schema: REVIEW_SCHEMA })
+  return agent(p.prompt, { label: `review:${lens}${round > 1 ? `-${round}` : ''}`, phase: round > 1 ? 'Fix' : 'Review', model: p.model, effort: p.effort, agentType: p.agentType, schema: REVIEW_SCHEMA })
 }))
 
 const GATE_PROMPT = () => `${RULES}
@@ -264,9 +277,9 @@ phase('Review')
 const round1 = await parallel([
   ...lenses.map((lens) => () => {
     const p = lensPrompt(lens, null)
-    return agent(p.prompt, { label: `review:${lens}`, phase: 'Review', model: p.model, schema: REVIEW_SCHEMA })
+    return agent(p.prompt, { label: `review:${lens}`, phase: 'Review', model: p.model, effort: p.effort, agentType: p.agentType, schema: REVIEW_SCHEMA })
   }),
-  () => agent(GATE_PROMPT(), { label: 'gate-dry-run', phase: 'Review', model: 'sonnet', effort: 'low', schema: REVIEW_SCHEMA }),
+  () => agent(GATE_PROMPT(), { label: 'gate-dry-run', phase: 'Review', agentType: 'runner', model: 'sonnet', effort: 'low', schema: REVIEW_SCHEMA }),
 ])
 const rank = { MAJOR: 0, MINOR: 1, NIT: 2 }
 const key = (f) => `${f.file}:${f.line || 0}:${f.summary.slice(0, 60).toLowerCase()}`
@@ -303,7 +316,9 @@ FINDINGS
 ${listText}`, {
     label: `fix-${round}`,
     phase: 'Fix',
+    agentType: 'fixer',
     model: 'sonnet',
+    effort: 'medium',
     schema: {
       type: 'object',
       required: ['fixed', 'disagreed', 'commit', 'devServerPort'],
@@ -352,14 +367,14 @@ const PUSH_SCHEMA = {
   required: ['ok', 'prUrl', 'hookFailure'],
   properties: { ok: { type: 'boolean' }, prUrl: { type: 'string' }, hookFailure: { type: 'string' } },
 }
-let push = await agent(pushPrompt(1), { label: 'push', phase: 'Ship', model: 'sonnet', schema: PUSH_SCHEMA })
+let push = await agent(pushPrompt(1), { label: 'push', phase: 'Ship', agentType: 'pusher', model: 'sonnet', effort: 'low', schema: PUSH_SCHEMA })
 if (push && !push.ok && push.hookFailure) {
   log('Pre-push hook failed; one fixer then one more push')
   await agent(`${RULES}
 The push hook failed with this output. Consult any failure → fix table CLAUDE.md names, fix the cause in the worktree, re-run the failing check locally, commit as \`fix: push gate${brief.ticketSource === 'text' ? '' : ` (${brief.ticketId})`}\` with whatever commit trailer the project or harness specifies. Do not push.
 
-${push.hookFailure}`, { label: 'fix-gate', phase: 'Ship', model: 'sonnet', schema: { type: 'object', required: ['commit', 'notes'], properties: { commit: { type: 'string' }, notes: { type: 'string' } } } })
-  push = await agent(pushPrompt(2), { label: 'push-2', phase: 'Ship', model: 'sonnet', schema: PUSH_SCHEMA })
+${push.hookFailure}`, { label: 'fix-gate', phase: 'Ship', agentType: 'fixer', model: 'sonnet', effort: 'medium', schema: { type: 'object', required: ['commit', 'notes'], properties: { commit: { type: 'string' }, notes: { type: 'string' } } } })
+  push = await agent(pushPrompt(2), { label: 'push-2', phase: 'Ship', agentType: 'pusher', model: 'sonnet', effort: 'low', schema: PUSH_SCHEMA })
 }
 
 const mainRoute = (build.routesAffected[0] || plan.routesAffected[0] || '/')
